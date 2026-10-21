@@ -1,0 +1,22 @@
+{
+  "name": "vulcaestus",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Self-hosted AI job search, application, and outreach platform",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "dev": "pnpm -r --parallel --if-present dev",
+    "test": "pnpm --filter @vulcaestus/api test && pnpm --filter @vulcaestus/ai test",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "db:generate": "pnpm --filter @vulcaestus/db generate",
+    "db:migrate": "pnpm --filter @vulcaestus/db migrate:deploy",
+    "db:push": "pnpm --filter @vulcaestus/db push",
+    "db:studio": "pnpm --filter @vulcaestus/db studio",
+    "db:seed": "pnpm --filter @vulcaestus/db seed",
+    "validate:workflows": "node scripts/validate-workflows.mjs"
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "id": "b24944ad-e881-4525-8145-4d6e5be35ce7",
+  "name": "09-analytics",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "b8ef36b0-6f66-4fe4-b4ef-fad0ebf1cdc9",
+      "name": "Daily at 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.VULCAESTUS_API_URL }}/api/internal/analytics/summary?profileId=={{ $env.VULCAESTUS_DEFAULT_PROFILE_ID || undefined }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.VULCAESTUS_SERVICE_KEY }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "536bd307-52ab-44d4-98a3-c7a751af57d2",
+      "name": "Fetch analytics summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst cards = data.cards || {};\nconst rates = data.rates || {};\nconst lines = [\n  `Jobs found today: ${cards.jobsFoundToday ?? 0}`,\n  `Strong matches: ${cards.strongMatches ?? 0}`,\n  `Applications submitted: ${cards.applicationsSubmitted ?? 0}`,\n  `Interviews: ${cards.interviews ?? 0}`,\n  `Offers: ${cards.offers ?? 0}`,\n  `Response rate: ${rates.responseRate ?? 0}%`,\n  `Interview rate: ${rates.interviewRate ?? 0}%`,\n  `Pending approvals: ${(cards.applicationsPending ?? 0) + (cards.messagesPending ?? 0)}`,\n];\nreturn [{ json: { subject: 'Daily job-search summary', body: lines.join('\\n') } }];"
+      },
+      "id": "159a745a-d1cc-496b-a5af-73b7eb9e786f",
+      "name": "Format summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.VULCAESTUS_API_URL }}/api/internal/notify",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.VULCAESTUS_SERVICE_KEY }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "532a473c-8296-4b4c-819f-dac281988242",
+      "name": "Send daily notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2
+    }
+  ],
+  "connections": {
+    "Daily at 08:00": {
+      "main": [
+        [
+          {
+            "node": "Fetch analytics summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch analytics summary": {
+      "main": [
+        [
+          {
+            "node": "Format summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format summary": {
+      "main": [
+        [
+          {
+            "node": "Send daily notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "versionId": "8c5353d4-e0c8-4200-84dc-8361dc372b74",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

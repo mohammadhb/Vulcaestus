@@ -1,0 +1,93 @@
+{
+  "id": "d3bec178-3753-4f67-846d-525b71a4fbcd",
+  "name": "08-interview-preparation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "fa501c89-a5d9-41ec-9da9-b2da5f3e7b81",
+      "name": "Hourly",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.VULCAESTUS_API_URL }}/api/internal/interviews/prepare-upcoming",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.VULCAESTUS_SERVICE_KEY }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ profileId: ={{ $env.VULCAESTUS_DEFAULT_PROFILE_ID || undefined }}, withinHours: 72 }) }}"
+      },
+      "id": "c61a9e9e-d157-4abe-b4b2-60f53418d3c8",
+      "name": "Prepare upcoming interviews",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Hourly": {
+      "main": [
+        [
+          {
+            "node": "Prepare upcoming interviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "versionId": "deb993b1-5a63-4ea0-9c51-913e3617791e",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

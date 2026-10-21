@@ -1,0 +1,93 @@
+{
+  "id": "841f1750-393f-4a76-82f8-682aee49a7f6",
+  "name": "02-job-scoring",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "14a42d78-cf48-4a81-a369-25608e772348",
+      "name": "Every 2 hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.VULCAESTUS_API_URL }}/api/internal/jobs/score-batch",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.VULCAESTUS_SERVICE_KEY }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ profileId: ={{ $env.VULCAESTUS_DEFAULT_PROFILE_ID || undefined }}, limit: 10 }) }}"
+      },
+      "id": "3a732804-47dc-4b60-a946-8f1afc470ad7",
+      "name": "Score unscored jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    }
+  ],
+  "connections": {
+    "Every 2 hours": {
+      "main": [
+        [
+          {
+            "node": "Score unscored jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "versionId": "0f4e9c1a-2feb-45ba-85cc-4ccd9a1f70f1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+browser/profiles/
+storage/
+uploads/
+*.log
+packages/database/prisma/*.db

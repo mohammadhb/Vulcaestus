@@ -1,0 +1,781 @@
+// Prisma schema for the self-hosted Vulcaestus.
+// UUID primary keys, explicit indexes, soft deletion where records are user-facing.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum AutomationMode {
+  SAFE_MODE
+  ASSISTED_MODE
+  AUTONOMOUS_MODE
+}
+
+enum RemoteType {
+  REMOTE
+  HYBRID
+  ONSITE
+  UNKNOWN
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  TEMPORARY
+  INTERNSHIP
+  FREELANCE
+  UNKNOWN
+}
+
+enum Seniority {
+  INTERN
+  JUNIOR
+  MID
+  SENIOR
+  STAFF
+  PRINCIPAL
+  LEAD
+  DIRECTOR
+  EXECUTIVE
+  UNKNOWN
+}
+
+enum JobSourceKind {
+  MANUAL
+  GREENHOUSE
+  LEVER
+  REMOTIVE
+  RSS
+  ASHBY
+  WORKABLE
+  SERPAPI_GOOGLE
+  INDEED_PARTNER
+  ZIPRECRUITER_PARTNER
+  LINKEDIN_MANUAL
+}
+
+enum Recommendation {
+  STRONG_APPLY
+  APPLY
+  REVIEW
+  LOW_PRIORITY
+  REJECT
+}
+
+enum ApplicationStatus {
+  DISCOVERED
+  SHORTLISTED
+  TAILORING
+  READY_FOR_APPROVAL
+  APPROVED
+  APPLYING
+  SUBMITTED
+  RECRUITER_SCREEN
+  INTERVIEW
+  FINAL_ROUND
+  OFFER
+  REJECTED
+  WITHDRAWN
+  ARCHIVED
+}
+
+enum ApprovalType {
+  APPLICATION_SUBMISSION
+  LINKEDIN_MESSAGE
+  REFERRAL_REQUEST
+  FOLLOWUP
+  INTERVIEW_ACTION
+  HUMAN_ACTION
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum MessageType {
+  CONNECTION_REQUEST
+  REFERRAL_REQUEST
+  RECRUITER_OUTREACH
+  HIRING_MANAGER_OUTREACH
+  FOLLOW_UP
+  THANK_YOU
+  POST_INTERVIEW_FOLLOW_UP
+}
+
+enum OutreachStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SCHEDULED
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum ContactCategory {
+  HIRING_MANAGER
+  RECRUITER
+  ENGINEERING_MANAGER
+  TEAM_MEMBER
+  ALUMNI
+  FORMER_COLLEAGUE
+  MUTUAL_CONNECTION
+  SECOND_DEGREE
+  OTHER
+}
+
+enum GenerationKind {
+  RESUME_STRUCTURE
+  JOB_SCORING
+  RESUME_TAILORING
+  COVER_LETTER
+  APPLICATION_ANSWERS
+  REFERRAL_DISCOVERY
+  LINKEDIN_MESSAGE
+  INTERVIEW_PREPARATION
+  FOLLOW_UP
+}
+
+enum AnswerStatus {
+  ANSWERED
+  HUMAN_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum FollowUpStatus {
+  SCHEDULED
+  DUE
+  AWAITING_APPROVAL
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum BrowserActionStatus {
+  QUEUED
+  RUNNING
+  AWAITING_HUMAN
+  SUCCEEDED
+  FAILED
+  SIMULATED
+  CANCELLED
+}
+
+enum BrowserActionKind {
+  APPLICATION_SUBMIT
+  LINKEDIN_PREPARE
+  LINKEDIN_SEND
+  PAGE_CAPTURE
+}
+
+enum NotificationChannel {
+  EMAIL
+  TELEGRAM
+  DASHBOARD
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum DocumentFormat {
+  PDF
+  DOCX
+  MARKDOWN
+}
+
+enum GenerationStatus {
+  DRAFT
+  APPROVED
+  REJECTED
+}
+
+enum AiProviderKind {
+  OLLAMA
+  OPENAI
+  ANTHROPIC
+  OPENROUTER
+  OPENCODE
+  CUSTOM_OPENAI
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  name         String?
+  passwordHash String
+  role         Role      @default(USER)
+  disabled     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+  sessions     Session[]
+  audits       AuditLog[]
+  approvals    ApprovalRequest[] @relation("ApprovalDecision")
+  profile      CandidateProfile?
+
+  @@index([createdAt])
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String   @unique
+  ip        String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model CandidateProfile {
+  id                    String         @id @default(uuid()) @db.Uuid
+  userId                String         @unique @db.Uuid
+  fullName              String
+  email                 String
+  phone                 String?
+  location              String?
+  country               String?
+  linkedinUrl           String?
+  githubUrl             String?
+  portfolioUrl          String?
+  headline              String?
+  summary               String?        @db.Text
+  yearsExperience       Float?
+  targetTitles          String[]       @default([])
+  alternativeTitles     String[]       @default([])
+  targetCountries       String[]       @default([])
+  targetCities          String[]       @default([])
+  remotePreference      RemoteType     @default(REMOTE)
+  minimumSalary         Int?
+  preferredSalary       Int?
+  currency              String         @default("EUR")
+  employmentTypes       String[]       @default([])
+  seniority             Seniority      @default(UNKNOWN)
+  industries            String[]       @default([])
+  priorityCompanies     String[]       @default([])
+  excludedCompanies     String[]       @default([])
+  technologies          String[]       @default([])
+  languages             String[]       @default([])
+  workAuthorization     String?
+  authorizedCountries   String[]       @default([])
+  sponsorshipRequired   Boolean        @default(false)
+  sponsorshipAcceptable Boolean        @default(true)
+  relocationPreference  String?
+  minimumJobScore       Int            @default(70)
+  tailorThreshold       Int            @default(75)
+  autoApplyThreshold    Int            @default(95)
+  coverLettersRequired  Boolean        @default(true)
+  prioritizeReferrals   Boolean        @default(true)
+  dailyApplicationLimit Int            @default(10)
+  dailyOutreachLimit    Int            @default(20)
+  automationMode        AutomationMode @default(SAFE_MODE)
+  timezone              String         @default("Europe/Berlin")
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  user                  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resumes               Resume[]
+  jobScores             JobScore[]
+  applications          Application[]
+  tailoredResumes       TailoredResume[]
+  coverLetters          CoverLetter[]
+  dailyCounters         DailyCounter[]
+  contacts              Contact[]
+  outreach              OutreachMessage[]
+  approvals             ApprovalRequest[]
+  followUps             FollowUp[]
+  interviews            Interview[]
+  browserActions        BrowserAction[]
+
+  @@index([userId])
+}
+
+model Resume {
+  id               String          @id @default(uuid()) @db.Uuid
+  profileId        String          @db.Uuid
+  name             String
+  isMaster         Boolean         @default(false)
+  originalFilename String?
+  mimeType         String?
+  rawText          String          @db.Text
+  structured       Json            @default("{}")
+  version          Int             @default(1)
+  sourceFormat     String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+  profile          CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  tailoredResumes  TailoredResume[]
+
+  @@index([profileId, isMaster])
+  @@index([profileId, createdAt])
+}
+
+model JobSource {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String        @unique
+  kind      JobSourceKind
+  enabled   Boolean       @default(true)
+  config    Json          @default("{}")
+  schedule  String?
+  lastRunAt DateTime?
+  lastError String?       @db.Text
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  jobs      Job[]
+
+  @@index([enabled])
+}
+
+model Job {
+  id                   String         @id @default(uuid()) @db.Uuid
+  sourceId             String?        @db.Uuid
+  source               String         @default("manual")
+  externalId           String?
+  canonicalUrl         String?        @unique
+  url                  String?
+  title                String
+  company              String
+  companyNormalized    String
+  location             String?
+  country              String?
+  remoteType           RemoteType     @default(UNKNOWN)
+  employmentType       EmploymentType @default(UNKNOWN)
+  seniority            Seniority      @default(UNKNOWN)
+  salaryMin            Int?
+  salaryMax            Int?
+  currency             String?
+  description          String         @db.Text
+  requirements         String[]       @default([])
+  responsibilities     String[]       @default([])
+  requiredSkills       String[]       @default([])
+  preferredSkills      String[]       @default([])
+  yearsExperience      Float?
+  educationRequirement String?
+  languageRequirements String[]       @default([])
+  visaSponsorship      Boolean?
+  industry             String?
+  postedAt             DateTime?
+  discoveredAt         DateTime       @default(now())
+  fingerprint          String         @unique
+  raw                  Json           @default("{}")
+  deletedAt            DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  sourceRef            JobSource?     @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  scores               JobScore[]
+  applications         Application[]
+  tailoredResumes      TailoredResume[]
+  coverLetters         CoverLetter[]
+  contacts             Contact[]
+  outreach             OutreachMessage[]
+  followUps            FollowUp[]
+  interviews           Interview[]
+  browserActions       BrowserAction[]
+
+  @@index([discoveredAt])
+  @@index([companyNormalized])
+  @@index([title])
+  @@index([source, externalId])
+  @@index([deletedAt])
+}
+
+model JobScore {
+  id                  String         @id @default(uuid()) @db.Uuid
+  jobId               String         @db.Uuid
+  profileId           String         @db.Uuid
+  overallScore        Int
+  technicalScore      Int
+  experienceScore     Int
+  seniorityScore      Int
+  locationScore       Int
+  salaryScore         Int
+  authorizationScore  Int
+  industryScore       Int
+  preferenceScore     Int
+  recommendation      Recommendation
+  missingRequirements String[]       @default([])
+  strongMatches       String[]       @default([])
+  risks               String[]       @default([])
+  reasoning           String         @db.Text
+  model               String
+  promptVersion       String
+  createdAt           DateTime       @default(now())
+  job                 Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profile             CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, createdAt])
+  @@index([profileId, overallScore])
+}
+
+model TailoredResume {
+  id              String           @id @default(uuid()) @db.Uuid
+  jobId           String           @db.Uuid
+  masterResumeId  String?          @db.Uuid
+  profileId       String           @db.Uuid
+  contentMarkdown String           @db.Text
+  contentJson     Json             @default("{}")
+  atsMarkdown     String           @db.Text
+  diff            Json             @default("{}")
+  status          GenerationStatus @default(DRAFT)
+  model           String
+  promptVersion   String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  job             Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  masterResume    Resume?          @relation(fields: [masterResumeId], references: [id], onDelete: SetNull)
+  profile         CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, createdAt])
+}
+
+model CoverLetter {
+  id            String           @id @default(uuid()) @db.Uuid
+  jobId         String           @db.Uuid
+  profileId     String           @db.Uuid
+  content       String           @db.Text
+  status        GenerationStatus @default(DRAFT)
+  model         String
+  promptVersion String
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  job           Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profile       CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, createdAt])
+}
+
+model Application {
+  id               String            @id @default(uuid()) @db.Uuid
+  jobId            String            @db.Uuid
+  profileId        String            @db.Uuid
+  status           ApplicationStatus @default(DISCOVERED)
+  scoreAtApply     Int?
+  tailoredResumeId String?           @db.Uuid
+  coverLetterId    String?           @db.Uuid
+  applicationUrl   String?
+  submittedAt      DateTime?
+  confirmationRef  String?
+  lastActivityAt   DateTime          @default(now())
+  notes            String?           @db.Text
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+  job              Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profile          CandidateProfile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  answers          ApplicationAnswer[]
+  followUps        FollowUp[]
+  interviews       Interview[]
+  browserActions   BrowserAction[]
+  outreach         OutreachMessage[]
+
+  @@unique([jobId, profileId])
+  @@index([profileId, status])
+  @@index([createdAt])
+  @@index([submittedAt])
+}
+
+model ApplicationAnswer {
+  id            String       @id @default(uuid()) @db.Uuid
+  applicationId String       @db.Uuid
+  question      String       @db.Text
+  answer        String       @db.Text
+  source        String
+  status        AnswerStatus @default(ANSWERED)
+  sensitive     Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  application   Application  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([status])
+}
+
+model Contact {
+  id             String           @id @default(uuid()) @db.Uuid
+  profileId      String           @db.Uuid
+  company        String
+  name           String
+  title          String?
+  linkedinUrl    String?
+  email          String?
+  category       ContactCategory  @default(OTHER)
+  relationship   String?
+  relevanceScore Int              @default(0)
+  reason         String?          @db.Text
+  source         String           @default("manual")
+  verified       Boolean          @default(false)
+  notes          String?          @db.Text
+  jobId          String?          @db.Uuid
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+  job            Job?             @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  profile        CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  outreach       OutreachMessage[]
+
+  @@unique([profileId, linkedinUrl])
+  @@index([profileId, company])
+  @@index([jobId])
+  @@index([relevanceScore])
+}
+
+model OutreachMessage {
+  id            String          @id @default(uuid()) @db.Uuid
+  profileId     String          @db.Uuid
+  contactId     String          @db.Uuid
+  jobId         String?         @db.Uuid
+  applicationId String?         @db.Uuid
+  type          MessageType
+  subject       String?
+  body          String          @db.Text
+  status        OutreachStatus  @default(DRAFT)
+  model         String
+  promptVersion String
+  evidence      Json            @default("{}")
+  dryRun        Boolean         @default(true)
+  approvedAt    DateTime?
+  sentAt        DateTime?
+  sentBy        String?
+  error         String?         @db.Text
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  contact       Contact         @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  job           Job?            @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  application   Application?    @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  profile       CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  followUps     FollowUp[]
+
+  @@index([profileId, status])
+  @@index([createdAt])
+}
+
+model ApprovalRequest {
+  id           String         @id @default(uuid()) @db.Uuid
+  profileId    String         @db.Uuid
+  type         ApprovalType
+  entityType   String
+  entityId     String         @db.Uuid
+  status       ApprovalStatus @default(PENDING)
+  title        String
+  content      String         @db.Text
+  metadata     Json           @default("{}")
+  priority     Int            @default(50)
+  requestedBy  String         @default("system")
+  approvedBy   String?        @db.Uuid
+  approvedAt   DateTime?
+  rejectedAt   DateTime?
+  decisionNote String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  expiresAt    DateTime?
+  approver     User?          @relation("ApprovalDecision", fields: [approvedBy], references: [id], onDelete: SetNull)
+  profile      CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, status, type])
+  @@index([createdAt])
+  @@index([entityId])
+}
+
+model FollowUp {
+  id            String         @id @default(uuid()) @db.Uuid
+  profileId     String         @db.Uuid
+  applicationId String?        @db.Uuid
+  outreachId    String?        @db.Uuid
+  jobId         String?        @db.Uuid
+  type          String
+  dueAt         DateTime
+  status        FollowUpStatus @default(SCHEDULED)
+  message       String?        @db.Text
+  attempts      Int            @default(0)
+  sentAt        DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  application   Application?   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  outreach      OutreachMessage? @relation(fields: [outreachId], references: [id], onDelete: Cascade)
+  job           Job?           @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  profile       CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, status, dueAt])
+  @@index([applicationId])
+}
+
+model Interview {
+  id            String           @id @default(uuid()) @db.Uuid
+  profileId     String           @db.Uuid
+  applicationId String           @db.Uuid
+  jobId         String           @db.Uuid
+  stage         String
+  scheduledAt   DateTime
+  interviewer   String?
+  location      String?
+  notes         String?          @db.Text
+  briefing      Json             @default("{}")
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  application   Application      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  job           Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  profile       CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, scheduledAt])
+}
+
+model BrowserAction {
+  id            String              @id @default(uuid()) @db.Uuid
+  profileId     String              @db.Uuid
+  kind          BrowserActionKind
+  status        BrowserActionStatus @default(QUEUED)
+  jobId         String?             @db.Uuid
+  applicationId String?             @db.Uuid
+  approvalId    String?             @db.Uuid
+  dryRun        Boolean             @default(true)
+  request       Json                @default("{}")
+  result        Json                @default("{}")
+  screenshots   String[]            @default([])
+  error         String?             @db.Text
+  workerJobId   String?
+  createdAt     DateTime            @default(now())
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  job           Job?                @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  application   Application?        @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  profile       CandidateProfile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, status, createdAt])
+  @@index([applicationId])
+}
+
+model AiGeneration {
+  id            String         @id @default(uuid()) @db.Uuid
+  kind          GenerationKind
+  model         String
+  promptVersion String
+  entityType    String?
+  entityId      String?        @db.Uuid
+  inputRefs     Json           @default("{}")
+  output        Json           @default("{}")
+  outputText    String?        @db.Text
+  latencyMs     Int?
+  success       Boolean        @default(true)
+  error         String?        @db.Text
+  createdAt     DateTime       @default(now())
+
+  @@index([kind, createdAt])
+  @@index([entityId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @db.Uuid
+  action     String
+  entityType String?
+  entityId   String?  @db.Uuid
+  result     String   @default("success")
+  metadata   Json     @default("{}")
+  ip         String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([entityType, entityId])
+}
+
+model DailyCounter {
+  id                    String           @id @default(uuid()) @db.Uuid
+  profileId             String           @db.Uuid
+  date                  DateTime         @db.Date
+  jobsDiscovered        Int              @default(0)
+  applicationsSubmitted Int              @default(0)
+  connectionsSent       Int              @default(0)
+  messagesSent          Int              @default(0)
+  followupsSent         Int              @default(0)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  profile               CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, date])
+}
+
+model Notification {
+  id        String             @id @default(uuid()) @db.Uuid
+  channel   NotificationChannel
+  subject   String
+  body      String             @db.Text
+  status    NotificationStatus @default(PENDING)
+  metadata  Json               @default("{}")
+  sentAt    DateTime?
+  error     String?            @db.Text
+  createdAt DateTime           @default(now())
+
+  @@index([status, createdAt])
+}
+
+model Prompt {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  version   String
+  content   String   @db.Text
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AiProviderConfig {
+  id              String         @id @default(uuid()) @db.Uuid
+  name            String         @unique
+  provider        AiProviderKind
+  baseUrl         String?
+  model           String
+  apiKeyEncrypted String?        @db.Text
+  enabled         Boolean        @default(true)
+  isDefault       Boolean        @default(false)
+  settings        Json           @default("{}")
+  lastTestedAt    DateTime?
+  lastTestOk      Boolean?
+  lastTestError   String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([provider, enabled])
+}
+
+model WebhookEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  eventId     String   @unique
+  type        String
+  payload     Json
+  processedAt DateTime?
+  error       String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([type, createdAt])
+}

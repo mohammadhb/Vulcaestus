@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  
+  <g transform="translate(296 34) scale(1.35)"><path d="M40 30 L88 4 L166 120 L244 4 L292 30 L184 182 L184 360 L136 360 L136 182 Z" fill="#ffffff"/>
+  <rect x="96" y="222" width="128" height="40" fill="#ffffff"/></g>
+  <g fill="#ffffff" font-family="Avenir Next, Futura, Century Gothic, Helvetica, Arial, sans-serif">
+    <text x="512" y="790" text-anchor="middle" font-size="132" font-weight="500" letter-spacing="1">vulcaestus</text>
+    <path d="M692 748 Q744 674 798 748" fill="none" stroke="#ffffff" stroke-width="14"/>
+    <rect x="238" y="752" width="654" height="13"/>
+  </g>
+</svg>
