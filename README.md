@@ -34,7 +34,8 @@ cp .env.example .env
 openssl rand -base64 32
 
 # 2. Build and start everything
-docker compose up -d --build
+#    `make up` builds images sequentially to avoid exhausting small Docker VMs.
+make up
 
 # 3. Wait for health
 docker compose ps
@@ -42,6 +43,18 @@ docker compose ps
 # 4. Pull the local model (the ollama-init service also attempts this)
 make model
 ```
+
+If you prefer raw Compose commands, build one service at a time:
+
+```bash
+docker compose build api
+docker compose build browser-worker
+docker compose build web
+docker compose up -d
+```
+
+Each Dockerfile installs only its own workspace dependency graph, which keeps the web
+build within a ~5 GB Docker VM. Next.js is capped at a 3 GB heap.
 
 Open **http://localhost:3000**.
 

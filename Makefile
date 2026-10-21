@@ -7,8 +7,11 @@ help: ## Show available commands
 env: ## Create .env from .env.example if missing
 	@test -f .env || (cp .env.example .env && echo "Created .env — replace change-me secrets before starting.")
 
-up: env ## Build and start the full stack
-	docker compose up -d --build
+up: env ## Build and start the full stack (sequential build avoids Docker VM OOM)
+	docker compose build api
+	docker compose build browser-worker
+	docker compose build web
+	docker compose up -d
 
 start: env ## Start without rebuilding
 	docker compose up -d

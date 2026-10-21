@@ -8,8 +8,8 @@ RUN npm install -g pnpm@9.15.0
 
 WORKDIR /app
 COPY . .
-RUN pnpm install --frozen-lockfile \
- && pnpm --filter @vulcaestus/browser-worker build
+RUN pnpm install --frozen-lockfile --filter @vulcaestus/browser-worker...
+RUN pnpm --filter @vulcaestus/browser-worker build
 
 ENV NODE_ENV=production
 ENV STORAGE_DIR=/data

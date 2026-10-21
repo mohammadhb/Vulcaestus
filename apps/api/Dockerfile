@@ -7,7 +7,7 @@ RUN corepack enable
 
 WORKDIR /app
 COPY . .
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --filter @vulcaestus/api...
 RUN pnpm --filter @vulcaestus/db generate \
  && pnpm --filter @vulcaestus/types build \
  && pnpm --filter @vulcaestus/ai build \
