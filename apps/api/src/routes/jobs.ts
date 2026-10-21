@@ -1,23 +1,32 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma, type Prisma } from '@vulcaestus/db';
-import {
-  jobInputSchema,
-  recommendationFor,
-} from '@vulcaestus/types';
+import { jobInputSchema, MESSAGE_TYPES } from '@vulcaestus/types';
 import { env } from '../env.js';
-import { requireAuth, requireProfile } from '../auth.js';
-import { HttpError, asString, audit, getPagination, jsonValue } from '../lib/http.js';
+import { requireProfile } from '../auth.js';
+import { HttpError, asString, audit, getPagination } from '../lib/http.js';
 import { checkLimit } from '../lib/limits.js';
 import { notify } from '../lib/notify.js';
 import { ingestJob, ingestJobs } from '../services/jobs/ingest.js';
 import { runSource } from '../services/jobs/sources.js';
 import { scoreJobForProfile } from '../services/jobs/score.js';
+import {
+  buildJobWhere,
+  findJobIds,
+  matchesScoreFilters,
+  parseJobFilters,
+  scoreFilterActive,
+} from '../services/jobs/query.js';
+import {
+  cancelBatchRun,
+  getBatchRun,
+  latestBatchRun,
+  startScoreBatch,
+} from '../services/jobs/bulk-score.js';
 import { generateCoverLetter, generateTailoredResume } from '../services/tailoring.js';
 import { prepareApplication } from '../services/applications.js';
 import { rankContactsForJob } from '../services/referrals.js';
 import { generateOutreach } from '../services/outreach.js';
-import { MESSAGE_TYPES } from '@vulcaestus/types';
 
 const jobPatchSchema = z.object({
   title: z.string().min(1).max(300).optional(),
@@ -40,41 +49,37 @@ const jobPatchSchema = z.object({
   industry: z.string().max(200).nullable().optional(),
 });
 
+const jobFilterInputSchema = z.object({
+  q: z.string().max(300).optional(),
+  company: z.string().max(300).optional(),
+  source: z.string().max(100).optional(),
+  remoteType: z.string().max(40).optional(),
+  recommendation: z.string().max(40).optional(),
+  minScore: z.union([z.number(), z.string()]).optional(),
+  hasApplication: z.string().max(10).optional(),
+  view: z.enum(['active', 'archived', 'deleted']).optional(),
+  sort: z.enum(['newest', 'score']).optional(),
+});
+
+async function ownedJob(profileId: string, jobId: string, includeDeleted = false) {
+  const job = await prisma.job.findFirst({
+    where: {
+      id: jobId,
+      profileId,
+      ...(includeDeleted ? {} : { deletedAt: null }),
+    },
+  });
+  if (!job) throw new HttpError(404, 'Job not found');
+  return job;
+}
+
 export async function jobRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/jobs', async (request) => {
     const auth = requireProfile(request);
     const query = request.query as Record<string, unknown>;
+    const filters = parseJobFilters(query);
     const { page, pageSize, skip, take } = getPagination(query);
-    const search = asString(query.q);
-    const company = asString(query.company);
-    const source = asString(query.source);
-    const remoteType = asString(query.remoteType);
-    const minScore = query.minScore ? Number(query.minScore) : undefined;
-    const recommendation = asString(query.recommendation);
-    const hasApplication = query.hasApplication;
-    const sort = asString(query.sort) ?? 'newest';
-
-    const where: Prisma.JobWhereInput = {
-      deletedAt: null,
-      ...(search
-        ? {
-            OR: [
-              { title: { contains: search, mode: 'insensitive' } },
-              { company: { contains: search, mode: 'insensitive' } },
-              { description: { contains: search, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
-      ...(company ? { companyNormalized: { contains: company.toLowerCase() } } : {}),
-      ...(source ? { source } : {}),
-      ...(remoteType ? { remoteType: remoteType as 'REMOTE' } : {}),
-      ...(hasApplication === 'true'
-        ? { applications: { some: { profileId: auth.profile.id, deletedAt: null } } }
-        : hasApplication === 'false'
-          ? { applications: { none: { profileId: auth.profile.id, deletedAt: null } } }
-          : {}),
-    };
-
+    const where = buildJobWhere(auth.profile.id, filters);
     const include = {
       scores: {
         where: { profileId: auth.profile.id },
@@ -88,22 +93,42 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
       },
     };
 
-    if (minScore !== undefined || recommendation) {
+    const [activeCount, archivedCount, deletedCount, unscoredCount, sourceFacets] = await Promise.all([
+      prisma.job.count({ where: { profileId: auth.profile.id, deletedAt: null, archivedAt: null } }),
+      prisma.job.count({ where: { profileId: auth.profile.id, deletedAt: null, archivedAt: { not: null } } }),
+      prisma.job.count({ where: { profileId: auth.profile.id, deletedAt: { not: null } } }),
+      prisma.job.count({
+        where: {
+          profileId: auth.profile.id,
+          deletedAt: null,
+          archivedAt: null,
+          scores: { none: { profileId: auth.profile.id } },
+        },
+      }),
+      prisma.job.groupBy({
+        by: ['source'],
+        where: { profileId: auth.profile.id, deletedAt: null },
+        _count: { _all: true },
+      }),
+    ]);
+    const counts = { active: activeCount, archived: archivedCount, deleted: deletedCount, unscored: unscoredCount };
+    const facets = {
+      sources: sourceFacets
+        .sort((a, b) => b._count._all - a._count._all)
+        .map((row) => row.source),
+    };
+
+    if (scoreFilterActive(filters)) {
       const jobs = await prisma.job.findMany({
         where,
         include,
-        orderBy: sort === 'score' ? { updatedAt: 'desc' } : { discoveredAt: 'desc' },
-        take: 500,
+        orderBy: filters.sort === 'score' ? { updatedAt: 'desc' } : { discoveredAt: 'desc' },
+        take: 1000,
       });
       const filtered = jobs
-        .filter((job) => {
-          const score = job.scores[0];
-          if (minScore !== undefined && (!score || score.overallScore < minScore)) return false;
-          if (recommendation && score?.recommendation !== recommendation) return false;
-          return true;
-        })
+        .filter((job) => matchesScoreFilters(job, filters))
         .sort((a, b) =>
-          sort === 'score'
+          filters.sort === 'score'
             ? (b.scores[0]?.overallScore ?? 0) - (a.scores[0]?.overallScore ?? 0)
             : b.discoveredAt.getTime() - a.discoveredAt.getTime(),
         );
@@ -113,6 +138,8 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
         total: filtered.length,
         page,
         pageSize,
+        counts,
+        facets,
         scores: Object.fromEntries(items.map((job) => [job.id, job.scores[0] ?? null])),
         applications: Object.fromEntries(items.map((job) => [job.id, job.applications[0] ?? null])),
       };
@@ -123,7 +150,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
       prisma.job.findMany({
         where,
         include,
-        orderBy: sort === 'score' ? { updatedAt: 'desc' } : { discoveredAt: 'desc' },
+        orderBy: filters.sort === 'score' ? { updatedAt: 'desc' } : { discoveredAt: 'desc' },
         skip,
         take,
       }),
@@ -133,9 +160,116 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
       total,
       page,
       pageSize,
+      counts,
+      facets,
       scores: Object.fromEntries(jobs.map((job) => [job.id, job.scores[0] ?? null])),
       applications: Object.fromEntries(jobs.map((job) => [job.id, job.applications[0] ?? null])),
     };
+  });
+
+  app.get('/api/jobs/ids', async (request) => {
+    const auth = requireProfile(request);
+    const query = request.query as Record<string, unknown>;
+    const filters = parseJobFilters(query);
+    const quick = z
+      .enum(['unscored', 'strong', 'apply', 'no_application', 'all'])
+      .parse(asString(query.quick) ?? 'all');
+    const ids = await findJobIds(auth.profile.id, filters, quick);
+    return { ids, count: ids.length };
+  });
+
+  app.get('/api/jobs/batches/active', async (request) => {
+    const auth = requireProfile(request);
+    const run = await latestBatchRun(auth.profile.id);
+    return {
+      batch: run && ['QUEUED', 'RUNNING'].includes(run.status) ? run : null,
+    };
+  });
+
+  app.get('/api/jobs/batches/:id', async (request) => {
+    const auth = requireProfile(request);
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    return { batch: await getBatchRun(auth.profile.id, id) };
+  });
+
+  app.post('/api/jobs/batches/:id/cancel', async (request) => {
+    const auth = requireProfile(request);
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const batch = await cancelBatchRun(auth.profile.id, id);
+    await audit({
+      userId: auth.user.id,
+      action: 'jobs.score_cancelled',
+      entityType: 'batch',
+      entityId: id,
+      ip: request.ip,
+    });
+    return { batch };
+  });
+
+  app.post('/api/jobs/score-all', async (request) => {
+    const auth = requireProfile(request);
+    const input = z
+      .object({
+        scope: z.enum(['unscored', 'filtered', 'selected']).default('unscored'),
+        jobIds: z.array(z.string().uuid()).max(500).optional(),
+        filters: jobFilterInputSchema.optional(),
+        useAi: z.boolean().default(true),
+      })
+      .parse(request.body ?? {});
+    const filters = input.filters ? parseJobFilters(input.filters as Record<string, unknown>) : undefined;
+    const batch = await startScoreBatch({
+      profileId: auth.profile.id,
+      scope: input.scope,
+      jobIds: input.jobIds,
+      filters,
+      useAi: input.useAi,
+    });
+    await audit({
+      userId: auth.user.id,
+      action: 'jobs.score_batch_started',
+      entityType: 'batch',
+      entityId: batch.id,
+      metadata: { scope: input.scope, total: batch.total, useAi: input.useAi },
+      ip: request.ip,
+    });
+    return { batch };
+  });
+
+  app.post('/api/jobs/bulk', async (request) => {
+    const auth = requireProfile(request);
+    const input = z
+      .object({
+        action: z.enum(['archive', 'unarchive', 'delete', 'restore']),
+        jobIds: z.array(z.string().uuid()).min(1).max(1000),
+      })
+      .parse(request.body);
+    const data: Prisma.JobUpdateManyMutationInput =
+      input.action === 'archive'
+        ? { archivedAt: new Date() }
+        : input.action === 'unarchive'
+          ? { archivedAt: null }
+          : input.action === 'delete'
+            ? { deletedAt: new Date() }
+            : { deletedAt: null };
+
+    const where: Prisma.JobWhereInput = {
+      profileId: auth.profile.id,
+      id: { in: input.jobIds },
+      ...(input.action === 'restore'
+        ? {}
+        : input.action === 'archive' || input.action === 'unarchive'
+          ? { deletedAt: null }
+          : {}),
+    };
+    const result = await prisma.job.updateMany({ where, data });
+    await audit({
+      userId: auth.user.id,
+      action: `jobs.bulk_${input.action}`,
+      entityType: 'job',
+      metadata: { count: result.count, jobIds: input.jobIds.slice(0, 100) },
+      ip: request.ip,
+    });
+    return { updated: result.count };
   });
 
   app.post('/api/jobs', async (request, reply) => {
@@ -238,7 +372,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
           .filter((result) => result.created > 0)
           .map((result) => `${result.source}: ${result.created} new`)
           .join('\n'),
-        metadata: { created },
+        metadata: { created, profileId: auth.profile.id },
       });
     }
     return { results, created };
@@ -248,7 +382,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
     const auth = requireProfile(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const job = await prisma.job.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, profileId: auth.profile.id, deletedAt: null },
       include: {
         scores: { where: { profileId: auth.profile.id }, orderBy: { createdAt: 'desc' }, take: 1 },
         applications: { where: { profileId: auth.profile.id, deletedAt: null } },
@@ -267,19 +401,21 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
           orderBy: { createdAt: 'desc' },
         })
       : [];
-    return { job, application: application ?? null, approvals };
+    const activeBatch = await latestBatchRun(auth.profile.id);
+    return {
+      job,
+      application: application ?? null,
+      approvals,
+      batch: activeBatch && ['QUEUED', 'RUNNING'].includes(activeBatch.status) ? activeBatch : null,
+    };
   });
 
   app.patch('/api/jobs/:id', async (request) => {
     const auth = requireProfile(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
     const input = jobPatchSchema.parse(request.body);
-    const existing = await prisma.job.findFirst({ where: { id, deletedAt: null } });
-    if (!existing) throw new HttpError(404, 'Job not found');
-    const job = await prisma.job.update({
-      where: { id },
-      data: input,
-    });
+    await ownedJob(auth.profile.id, id);
+    const job = await prisma.job.update({ where: { id }, data: input });
     await audit({
       userId: auth.user.id,
       action: 'job.updated',
@@ -291,21 +427,46 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
     return { job };
   });
 
+  app.post('/api/jobs/:id/archive', async (request) => {
+    const auth = requireProfile(request);
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    await ownedJob(auth.profile.id, id);
+    const job = await prisma.job.update({ where: { id }, data: { archivedAt: new Date() } });
+    await audit({ userId: auth.user.id, action: 'job.archived', entityType: 'job', entityId: id, ip: request.ip });
+    return { job };
+  });
+
+  app.delete('/api/jobs/:id/archive', async (request) => {
+    const auth = requireProfile(request);
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    await ownedJob(auth.profile.id, id);
+    const job = await prisma.job.update({ where: { id }, data: { archivedAt: null } });
+    await audit({ userId: auth.user.id, action: 'job.unarchived', entityType: 'job', entityId: id, ip: request.ip });
+    return { job };
+  });
+
   app.delete('/api/jobs/:id', async (request) => {
     const auth = requireProfile(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    await prisma.job.update({ where: { id }, data: { deletedAt: new Date() } }).catch(() => {
-      throw new HttpError(404, 'Job not found');
-    });
-    await audit({ userId: auth.user.id, action: 'job.archived', entityType: 'job', entityId: id, ip: request.ip });
-    return { ok: true };
+    await ownedJob(auth.profile.id, id);
+    const job = await prisma.job.update({ where: { id }, data: { deletedAt: new Date() } });
+    await audit({ userId: auth.user.id, action: 'job.deleted', entityType: 'job', entityId: id, ip: request.ip });
+    return { job };
+  });
+
+  app.post('/api/jobs/:id/restore', async (request) => {
+    const auth = requireProfile(request);
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    await ownedJob(auth.profile.id, id, true);
+    const job = await prisma.job.update({ where: { id }, data: { deletedAt: null } });
+    await audit({ userId: auth.user.id, action: 'job.restored', entityType: 'job', entityId: id, ip: request.ip });
+    return { job };
   });
 
   app.post('/api/jobs/:id/score', async (request) => {
     const auth = requireProfile(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const job = await prisma.job.findFirst({ where: { id, deletedAt: null } });
-    if (!job) throw new HttpError(404, 'Job not found');
+    const job = await ownedJob(auth.profile.id, id);
     const resume = await prisma.resume.findFirst({
       where: { profileId: auth.profile.id, isMaster: true, deletedAt: null },
       orderBy: { updatedAt: 'desc' },
@@ -323,7 +484,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
       await notify({
         subject: `Strong match: ${job.title} at ${job.company}`,
         body: `Score ${score.overallScore}/100. ${score.reasoning}`,
-        metadata: { jobId: job.id, scoreId: score.id },
+        metadata: { jobId: job.id, scoreId: score.id, profileId: auth.profile.id },
       });
     }
     return { score };
@@ -332,8 +493,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/jobs/:id/tailor', async (request) => {
     const auth = requireProfile(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const job = await prisma.job.findFirst({ where: { id, deletedAt: null } });
-    if (!job) throw new HttpError(404, 'Job not found');
+    const job = await ownedJob(auth.profile.id, id);
     const resume = await prisma.resume.findFirst({
       where: { profileId: auth.profile.id, isMaster: true, deletedAt: null },
       orderBy: { updatedAt: 'desc' },
@@ -354,8 +514,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/jobs/:id/cover-letter', async (request) => {
     const auth = requireProfile(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const job = await prisma.job.findFirst({ where: { id, deletedAt: null } });
-    if (!job) throw new HttpError(404, 'Job not found');
+    const job = await ownedJob(auth.profile.id, id);
     const resume = await prisma.resume.findFirst({
       where: { profileId: auth.profile.id, isMaster: true, deletedAt: null },
       orderBy: { updatedAt: 'desc' },
@@ -389,8 +548,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/jobs/:id/prepare', async (request) => {
     const auth = requireProfile(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const job = await prisma.job.findFirst({ where: { id, deletedAt: null } });
-    if (!job) throw new HttpError(404, 'Job not found');
+    const job = await ownedJob(auth.profile.id, id);
     const input = z
       .object({ force: z.boolean().optional(), includeCoverLetter: z.boolean().optional() })
       .parse(request.body ?? {});
@@ -409,8 +567,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/jobs/:id/referrals', async (request) => {
     const auth = requireProfile(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
-    const job = await prisma.job.findFirst({ where: { id, deletedAt: null } });
-    if (!job) throw new HttpError(404, 'Job not found');
+    const job = await ownedJob(auth.profile.id, id);
     const contacts = await rankContactsForJob(auth.profile.id, job);
     return {
       contacts,
@@ -432,8 +589,7 @@ export async function jobRoutes(app: FastifyInstance): Promise<void> {
         tone: z.string().max(200).optional(),
       })
       .parse(request.body);
-    const job = await prisma.job.findFirst({ where: { id, deletedAt: null } });
-    if (!job) throw new HttpError(404, 'Job not found');
+    const job = await ownedJob(auth.profile.id, id);
     const contact = await prisma.contact.findFirst({
       where: { id: input.contactId, profileId: auth.profile.id, deletedAt: null },
     });

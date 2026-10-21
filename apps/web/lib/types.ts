@@ -86,6 +86,7 @@ export interface JobScore {
 
 export interface Job {
   id: string;
+  profileId: string;
   title: string;
   company: string;
   location: string | null;
@@ -108,6 +109,8 @@ export interface Job {
   source: string;
   externalId?: string | null;
   discoveredAt: string;
+  archivedAt?: string | null;
+  deletedAt?: string | null;
   postedAt?: string | null;
   scores?: JobScore[];
   applications?: Application[];
@@ -115,6 +118,21 @@ export interface Job {
   coverLetters?: CoverLetter[];
   contacts?: Contact[];
   outreach?: OutreachMessage[];
+}
+
+export interface BatchRun {
+  id: string;
+  profileId: string;
+  kind: string;
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'INTERRUPTED';
+  total: number;
+  processed: number;
+  failed: number;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TailoredResume {

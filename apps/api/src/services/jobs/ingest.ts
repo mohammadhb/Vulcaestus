@@ -12,8 +12,14 @@ export interface IngestResult {
   duplicateOf?: string;
 }
 
-function toCreateData(normalized: NormalizedJob, sourceId: string | null, raw: unknown) {
+function toCreateData(
+  normalized: NormalizedJob,
+  sourceId: string | null,
+  raw: unknown,
+  profileId: string,
+) {
   return {
+    profileId,
     sourceId,
     source: normalized.source,
     externalId: normalized.externalId,
@@ -80,17 +86,18 @@ async function enrichExisting(existing: Job, normalized: NormalizedJob, raw: unk
 
 export async function ingestJob(
   input: JobInput,
-  options: { sourceId?: string | null; raw?: unknown; profileId?: string } = {},
+  options: { sourceId?: string | null; raw?: unknown; profileId: string },
 ): Promise<IngestResult> {
   const normalized = normalizeJobInput(input);
   const sourceId = options.sourceId ?? null;
+  const profileId = options.profileId;
 
   if (normalized.externalId) {
     const existing = await prisma.job.findFirst({
       where: {
+        profileId,
         source: normalized.source,
         externalId: normalized.externalId,
-        deletedAt: null,
       },
     });
     if (existing) {
@@ -105,7 +112,7 @@ export async function ingestJob(
 
   if (normalized.canonicalUrl) {
     const existing = await prisma.job.findFirst({
-      where: { canonicalUrl: normalized.canonicalUrl, deletedAt: null },
+      where: { profileId, canonicalUrl: normalized.canonicalUrl },
     });
     if (existing) {
       return {
@@ -118,7 +125,7 @@ export async function ingestJob(
   }
 
   const fingerprintMatch = await prisma.job.findFirst({
-    where: { fingerprint: normalized.fingerprint, deletedAt: null },
+    where: { profileId, fingerprint: normalized.fingerprint },
   });
   if (fingerprintMatch) {
     return {
@@ -132,6 +139,7 @@ export async function ingestJob(
   if (normalized.companyNormalized) {
     const recent = await prisma.job.findMany({
       where: {
+        profileId,
         companyNormalized: normalized.companyNormalized,
         deletedAt: null,
         discoveredAt: { gte: new Date(Date.now() - 1000 * 60 * 60 * 24 * 180) },
@@ -175,22 +183,21 @@ export async function ingestJob(
 
   try {
     const job = await prisma.job.create({
-      data: toCreateData({ ...normalized, source: normalized.source }, sourceId, options.raw ?? input),
+      data: toCreateData(normalized, sourceId, options.raw ?? input, profileId),
     });
-    if (options.profileId) {
-      const date = new Date(new Date().toISOString().slice(0, 10));
-      await prisma.dailyCounter.upsert({
-        where: { profileId_date: { profileId: options.profileId, date } },
-        update: { jobsDiscovered: { increment: 1 } },
-        create: { profileId: options.profileId, date, jobsDiscovered: 1 },
-      });
-    }
+    const date = new Date(new Date().toISOString().slice(0, 10));
+    await prisma.dailyCounter.upsert({
+      where: { profileId_date: { profileId, date } },
+      update: { jobsDiscovered: { increment: 1 } },
+      create: { profileId, date, jobsDiscovered: 1 },
+    });
     return { job, created: true };
   } catch (error) {
     // A concurrent discovery run may have inserted the same job first.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       const existing = await prisma.job.findFirst({
         where: {
+          profileId,
           OR: [
             { fingerprint: normalized.fingerprint },
             ...(normalized.canonicalUrl ? [{ canonicalUrl: normalized.canonicalUrl }] : []),
@@ -207,7 +214,7 @@ export async function ingestJob(
 
 export async function ingestJobs(
   inputs: JobInput[],
-  options: { sourceId?: string | null; profileId?: string; limit?: number } = {},
+  options: { sourceId?: string | null; profileId: string; limit?: number },
 ): Promise<{ created: number; duplicates: number; errors: number; jobs: Job[] }> {
   const limit = options.limit ?? env.MAX_JOBS_PER_DAY;
   let created = 0;

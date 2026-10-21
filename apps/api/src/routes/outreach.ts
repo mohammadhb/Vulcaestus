@@ -71,7 +71,9 @@ export async function outreachRoutes(app: FastifyInstance): Promise<void> {
     });
     if (!contact) throw new HttpError(404, 'Contact not found');
     const job = input.jobId
-      ? await prisma.job.findFirst({ where: { id: input.jobId, deletedAt: null } })
+      ? await prisma.job.findFirst({
+          where: { id: input.jobId, profileId: auth.profile.id, deletedAt: null },
+        })
       : null;
     if (input.jobId && !job) throw new HttpError(404, 'Job not found');
     const message = await generateOutreach({

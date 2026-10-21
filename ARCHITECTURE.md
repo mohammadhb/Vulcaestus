@@ -39,10 +39,12 @@ n8n (:5678) ── service key ──► /api/internal/*
 | Outreach | `Contact`, `OutreachMessage`, `FollowUp` |
 | Human loop | `ApprovalRequest` |
 | Interviews | `Interview` |
-| Operations | `AiGeneration`, `DailyCounter`, `Notification`, `WebhookEvent`, `Prompt`, `Setting`, `AiProviderConfig` |
+| Operations | `AiGeneration`, `DailyCounter`, `Notification`, `WebhookEvent`, `Prompt`, `Setting`, `AiProviderConfig`, `BatchRun` |
 
-All primary keys are UUIDs. Private records carry `profileId`. Jobs are a shared catalog with
-global deduplication; `Application` is unique per `(jobId, profileId)`.
+All primary keys are UUIDs. Private records carry `profileId`. Jobs are private to a profile,
+with per-profile deduplication; `Application` is unique per `(jobId, profileId)`. Job sources
+are deployment-wide (admin-managed), while discovery writes into the requesting user's catalog.
+Archive (`archivedAt`) and delete (`deletedAt`) are reversible, per-user states.
 
 Indexes cover the common dashboard queries: job discovery date, company, title, score, approval
 status/type, application status, outreach status, follow-up due date, and audit time.
@@ -55,7 +57,7 @@ status/type, application status, outreach status, follow-up due date, and audit 
    - strips tracking parameters from URLs
    - detects work mode, employment type, seniority, skills, years, salary, sponsorship
    - computes a fingerprint from `company|title|location`
-3. `ingestJob` checks, in order:
+3. `ingestJob` checks, in order, **within the owning profile's catalog**:
    - source + external id
    - canonical URL
    - fingerprint
@@ -63,6 +65,7 @@ status/type, application status, outreach status, follow-up due date, and audit 
 4. Existing records are enriched (longer description, missing URL/skills/salary) instead of duplicated.
 5. A concurrent insert race is handled by catching the unique violation and returning the winner.
 6. A `DailyCounter` increments per profile for discovery.
+7. Jobs are private to `profileId`. Two users can hold the same posting independently, with separate scores, archives, and applications. Job sources remain deployment-wide.
 
 This makes repeated workflow runs idempotent.
 

@@ -5,6 +5,17 @@ import { env } from './env.js';
 async function main(): Promise<void> {
   const app = await buildApp();
 
+  await prisma.batchRun
+    .updateMany({
+      where: { status: { in: ['QUEUED', 'RUNNING'] } },
+      data: {
+        status: 'INTERRUPTED',
+        finishedAt: new Date(),
+        error: 'Interrupted by an API restart.',
+      },
+    })
+    .catch(() => undefined);
+
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'shutting down');
     await app.close();

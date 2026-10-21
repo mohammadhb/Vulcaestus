@@ -172,7 +172,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
     const auth = requireProfile(request);
     const input = z.object({ jobId: z.string().uuid() }).parse(request.body);
     const job = await prisma.job.findFirst({
-      where: { id: input.jobId, deletedAt: null },
+      where: { id: input.jobId, profileId: auth.profile.id, deletedAt: null },
     });
     if (!job) throw new HttpError(404, 'Job not found');
     const contacts = await rankContactsForJob(auth.profile.id, job);

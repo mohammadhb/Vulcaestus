@@ -91,7 +91,9 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
         case 'job-approved': {
           const profileId = await defaultProfileId(typeof body.profileId === 'string' ? body.profileId : undefined);
           const jobId = z.string().uuid().parse(body.jobId);
-          const job = await prisma.job.findFirst({ where: { id: jobId, deletedAt: null } });
+          const job = await prisma.job.findFirst({
+            where: { id: jobId, profileId, deletedAt: null },
+          });
           if (!job) throw new HttpError(404, 'Job not found');
           const profile = await prisma.candidateProfile.findUniqueOrThrow({ where: { id: profileId } });
           const resume = await prisma.resume.findFirst({

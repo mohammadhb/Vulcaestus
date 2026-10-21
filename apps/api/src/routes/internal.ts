@@ -165,7 +165,7 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
       orderBy: { updatedAt: 'desc' },
     });
     const jobs = await prisma.job.findMany({
-      where: { deletedAt: null, scores: { none: { profileId } } },
+      where: { profileId, deletedAt: null, archivedAt: null, scores: { none: { profileId } } },
       orderBy: { discoveredAt: 'desc' },
       take: input.limit,
     });
@@ -193,7 +193,12 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
       where: {
         profileId,
         overallScore: { gte: profile.tailorThreshold },
-        job: { deletedAt: null, tailoredResumes: { none: { profileId } } },
+        job: {
+          profileId,
+          deletedAt: null,
+          archivedAt: null,
+          tailoredResumes: { none: { profileId } },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: input.limit * 2,
@@ -204,7 +209,7 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
     for (const score of scores) {
       if (generated.length >= input.limit || seen.has(score.jobId)) continue;
       seen.add(score.jobId);
-      const job = await prisma.job.findUnique({ where: { id: score.jobId } });
+      const job = await prisma.job.findFirst({ where: { id: score.jobId, profileId } });
       if (!job) continue;
       const tailored = await generateTailoredResume(profile, resume, job);
       generated.push({ jobId: job.id, tailoredResumeId: tailored.id });
@@ -223,7 +228,12 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
       where: {
         profileId,
         overallScore: { gte: profile.tailorThreshold },
-        job: { deletedAt: null, applications: { none: { profileId, deletedAt: null } } },
+        job: {
+          profileId,
+          deletedAt: null,
+          archivedAt: null,
+          applications: { none: { profileId, deletedAt: null } },
+        },
       },
       orderBy: { createdAt: 'desc' },
       take: input.limit * 3,
@@ -232,7 +242,7 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
     const prepared: Array<{ jobId: string; applicationId: string; warnings: string[] }> = [];
     for (const score of scores) {
       if (prepared.length >= input.limit) break;
-      const job = await prisma.job.findUnique({ where: { id: score.jobId } });
+      const job = await prisma.job.findFirst({ where: { id: score.jobId, profileId } });
       if (!job) continue;
       const result = await prepareApplication(profile, job);
       prepared.push({
@@ -260,7 +270,12 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
       const contact = contacts.find((item) => item.company === company);
       if (!contact) continue;
       const job = await prisma.job.findFirst({
-        where: { companyNormalized: { contains: company.toLowerCase().split(/\s+/)[0] ?? company }, deletedAt: null },
+        where: {
+          profileId,
+          companyNormalized: { contains: company.toLowerCase().split(/\s+/)[0] ?? company },
+          deletedAt: null,
+          archivedAt: null,
+        },
         orderBy: { discoveredAt: 'desc' },
       });
       if (!job) continue;

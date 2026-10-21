@@ -415,7 +415,9 @@ export async function scoreJobForProfile(
   profile: CandidateProfile,
   job: Job,
   resume?: Resume | null,
-): Promise<JobScore> {  const scoringProfile = profileToScoringProfile(profile);
+  options: { useAi?: boolean } = {},
+): Promise<JobScore> {
+  const scoringProfile = profileToScoringProfile(profile);
   const structured = (resume?.structured ?? null) as StructuredResume | null;
   const candidateSkills = collectCandidateSkills(scoringProfile, structured);
   const deterministic = computeDeterministicScore(
@@ -425,16 +427,18 @@ export async function scoreJobForProfile(
     structured,
   );
 
-  const ai = await runAiJson({
-    kind: 'JOB_SCORING',
-    promptName: 'job-scoring',
-    entityType: 'job',
-    entityId: job.id,
-    inputRefs: { jobId: job.id, profileId: profile.id, resumeId: resume?.id },
-    schema: jobScoreSchema,
-    normalize: normalizeScorePayload,
-    maxTokens: 1600,
-    variables: {
+  const ai = options.useAi === false
+    ? null
+    : await runAiJson({
+        kind: 'JOB_SCORING',
+        promptName: 'job-scoring',
+        entityType: 'job',
+        entityId: job.id,
+        inputRefs: { jobId: job.id, profileId: profile.id, resumeId: resume?.id },
+        schema: jobScoreSchema,
+        normalize: normalizeScorePayload,
+        maxTokens: 1600,
+        variables: {
       candidate: {
         title: profile.targetTitles,
         seniority: profile.seniority,

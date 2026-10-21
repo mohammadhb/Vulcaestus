@@ -219,6 +219,19 @@ enum AiProviderKind {
   CUSTOM_OPENAI
 }
 
+enum BatchKind {
+  SCORE
+}
+
+enum BatchStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  INTERRUPTED
+}
+
 model User {
   id           String    @id @default(uuid()) @db.Uuid
   email        String    @unique
@@ -309,6 +322,8 @@ model CandidateProfile {
   followUps             FollowUp[]
   interviews            Interview[]
   browserActions        BrowserAction[]
+  jobs                  Job[]
+  batchRuns             BatchRun[]
 
   @@index([userId])
 }
@@ -352,10 +367,11 @@ model JobSource {
 
 model Job {
   id                   String         @id @default(uuid()) @db.Uuid
+  profileId            String         @db.Uuid
   sourceId             String?        @db.Uuid
   source               String         @default("manual")
   externalId           String?
-  canonicalUrl         String?        @unique
+  canonicalUrl         String?
   url                  String?
   title                String
   company              String
@@ -380,12 +396,14 @@ model Job {
   industry             String?
   postedAt             DateTime?
   discoveredAt         DateTime       @default(now())
-  fingerprint          String         @unique
+  fingerprint          String
   raw                  Json           @default("{}")
+  archivedAt           DateTime?
   deletedAt            DateTime?
   createdAt            DateTime       @default(now())
   updatedAt            DateTime       @updatedAt
   sourceRef            JobSource?     @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  profile              CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   scores               JobScore[]
   applications         Application[]
   tailoredResumes      TailoredResume[]
@@ -396,11 +414,14 @@ model Job {
   interviews           Interview[]
   browserActions       BrowserAction[]
 
-  @@index([discoveredAt])
-  @@index([companyNormalized])
-  @@index([title])
+  @@unique([profileId, canonicalUrl])
+  @@unique([profileId, fingerprint])
+  @@index([profileId, discoveredAt])
+  @@index([profileId, companyNormalized])
+  @@index([profileId, archivedAt])
+  @@index([profileId, deletedAt])
+  @@index([profileId, title])
   @@index([source, externalId])
-  @@index([deletedAt])
 }
 
 model JobScore {
@@ -778,4 +799,23 @@ model WebhookEvent {
   createdAt   DateTime @default(now())
 
   @@index([type, createdAt])
+}
+
+model BatchRun {
+  id          String         @id @default(uuid()) @db.Uuid
+  profileId   String         @db.Uuid
+  kind        BatchKind      @default(SCORE)
+  status      BatchStatus    @default(QUEUED)
+  total       Int            @default(0)
+  processed   Int            @default(0)
+  failed      Int            @default(0)
+  request     Json           @default("{}")
+  error       String?        @db.Text
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  profile     CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, status, createdAt])
 }

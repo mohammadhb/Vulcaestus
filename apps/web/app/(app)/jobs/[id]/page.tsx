@@ -35,6 +35,7 @@ import {
   Progress,
 } from '@/components/ui';
 import { JobActions } from '@/components/job-actions';
+import { JobManageActions } from '@/components/job-manage-actions';
 import { ContactForm } from '@/components/contact-form';
 import { OutreachTrigger } from '@/components/outreach-trigger';
 import { RankReferralsButton } from '@/components/rank-referrals-button';
@@ -72,6 +73,15 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         <ArrowLeft className="h-3.5 w-3.5" /> Back to jobs
       </Link>
 
+      {job.archivedAt ? (
+        <div className="mb-4">
+          <Notice tone="warning">
+            This job is archived. It is hidden from the active list but keeps its scores, documents, and application
+            history.
+          </Notice>
+        </div>
+      ) : null}
+
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -96,6 +106,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <JobManageActions jobId={job.id} archived={Boolean(job.archivedAt)} deleted={false} />
           {job.url ? (
             <ButtonLink href={job.url} variant="secondary">
               <ExternalLink className="h-4 w-4" /> Original posting

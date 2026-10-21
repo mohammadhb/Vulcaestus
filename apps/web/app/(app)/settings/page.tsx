@@ -120,7 +120,7 @@ export default async function SettingsPage() {
             <CardHeader title="Data & storage" description="Everything stays on this server." />
             <CardBody className="space-y-2 text-[11px] leading-relaxed text-ink-500">
               <p className="flex gap-2"><Database className="mt-0.5 h-3.5 w-3.5 shrink-0" /> PostgreSQL stores profiles, jobs, documents, approvals, and audit logs.</p>
-              <p className="flex gap-2"><Users className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Each user has a private profile; the job catalog is shared and deduplicated.</p>
+              <p className="flex gap-2"><Users className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Each user has a private job catalog, profile, scores, applications, and outreach. Sources are admin-managed.</p>
               <p className="flex gap-2"><Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Provider API keys are encrypted with AES-256-GCM using SECRETS_KEY.</p>
               <p className="mt-2">Version {String(runtime.version ?? '1.0.0')}</p>
             </CardBody>

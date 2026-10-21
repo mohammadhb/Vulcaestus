@@ -198,7 +198,7 @@ export default async function DashboardPage() {
         <Card className="xl:col-span-2">
           <CardHeader
             title="Recently discovered jobs"
-            description="Latest jobs in the shared catalog, with your latest score."
+            description="Latest jobs in your private catalog, with your latest score."
             action={
               <Link href="/jobs" className="link text-xs">
                 All jobs <ArrowRight className="inline h-3 w-3" />

@@ -100,8 +100,8 @@ after rotation.
 - PostgreSQL and `./storage` are the state to back up.
 - `./browser/profiles` contains live session cookies. Treat it like a password store.
 - Backups contain personal data and should be encrypted at rest.
-- Deleting a user cascades to their profile and private records. Jobs are shared and retained.
-- Soft deletion is used for jobs, resumes, applications, and contacts; purge manually if required.
+- Deleting a user cascades to their profile and private records, including their job catalog.
+- Soft deletion is used for jobs, resumes, applications, and contacts. Jobs also support a separate per-user archive state; both delete and archive are reversible from the Jobs page.
 
 ## Known risks
 

@@ -126,7 +126,7 @@ More detail: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 ### Accounts & privacy
 - First-run setup, bcrypt password hashing, hashed session tokens in HTTP-only cookies
 - `ADMIN` and `USER` roles, admin user management, per-user profile and data isolation
-- Shared, globally deduplicated job catalog; scores/applications/outreach are private
+- Private, per-user job catalogs with per-profile deduplication; sources are admin-managed
 
 ### Candidate profile
 - Personal details, links, summary, years of experience
@@ -143,6 +143,7 @@ More detail: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 - PDF, DOCX, and Markdown export; ATS-friendly plain version
 
 ### Jobs
+- **Private per-user job catalogs** with per-profile deduplication; sources stay admin-managed
 - Pluggable sources: Greenhouse, Lever, Remotive, Ashby, Workable, RSS, manual import
 - Authorized-partner adapters for Indeed and ZipRecruiter (credentials required)
 - Google Jobs via SerpAPI (key required)
@@ -154,6 +155,11 @@ More detail: [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 - Deterministic scoring for technical, experience, seniority, location, salary,
   authorization, industry, and preference, optionally refined by AI
 - Score recommendations driven by configurable thresholds
+- Archive and soft-delete per job, with Archived/Deleted views and restore
+- Multi-select bulk actions: score selected, archive, delete, restore, unarchive
+- Background bulk scoring with progress, cancellation, and a fast deterministic-only mode
+- Collapsible filter panel, saved via URL parameters, plus quick selections for unscored,
+  strong matches, apply-range, and jobs without applications
 
 ### Applications & approvals
 - Application package: tailored resume, cover letter, answers, risk/missing-requirement summary
@@ -359,7 +365,7 @@ Authentication uses the `vulcaestus_session` HTTP-only cookie. Internal endpoint
 | Users | `GET/POST /api/users`, `PATCH/DELETE /api/users/:id` |
 | Profile | `GET/PUT /api/profile`, `GET /api/profile/daily-limits` |
 | Resumes | `GET/POST /api/resumes`, `GET/PATCH/DELETE /api/resumes/:id`, `POST /api/resumes/:id/structure` |
-| Jobs | `GET/POST /api/jobs`, `GET/PATCH/DELETE /api/jobs/:id`, `POST /api/jobs/discover` |
+| Jobs | `GET/POST /api/jobs`, `GET/PATCH/DELETE /api/jobs/:id`, `POST /api/jobs/discover`, `GET /api/jobs/ids`, `POST/DELETE /api/jobs/:id/archive`, `POST /api/jobs/:id/restore`, `POST /api/jobs/bulk`, `POST /api/jobs/score-all`, `GET /api/jobs/batches/:id` |
 | Job actions | `POST /api/jobs/:id/score`, `/tailor`, `/cover-letter`, `/prepare`, `/referrals`, `/outreach` |
 | Applications | `GET /api/applications`, `GET/PATCH/DELETE /api/applications/:id`, `POST /:id/answers`, `PATCH /:id/answers/:answerId`, `POST /:id/request-approval`, `GET /:id/timeline` |
 | Approvals | `GET /api/approvals`, `GET /:id`, `POST /:id/approve`, `/reject`, `/postpone`, `/regenerate`, `PATCH /:id`, `POST /api/approvals/bulk-approve` |

@@ -36,7 +36,7 @@ export default async function AnalyticsPage() {
       <PageHeader
         eyebrow="Insight"
         title="Analytics"
-        description="Outcome metrics for your own profile. The job catalog is shared; applications and scores are not."
+        description="Outcome metrics for your own profile and private job catalog."
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
